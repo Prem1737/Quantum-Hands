@@ -28,4 +28,4 @@ A futuristic hand-tracking web application built using MediaPipe Hands and JavaS
 ## Author
 
 Prem
-First Year AIML Student
+AIML Student
