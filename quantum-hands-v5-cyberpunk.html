@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Quantum Hands V5 Cyberpunk</title>
+<style>
+html,body{margin:0;height:100%;overflow:hidden;background:#000;font-family:monospace}
+#cam,#fx{position:fixed;inset:0;width:100%;height:100%;object-fit:cover}
+#cam{transform:scaleX(-1)}
+#fx{mix-blend-mode:screen}
+#hud{position:fixed;left:15px;top:15px;color:#6cffff;z-index:5;text-shadow:0 0 12px #00ffff}
+#start{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:radial-gradient(circle,#081020,#000);z-index:10}
+button{padding:18px 40px;background:transparent;color:#0ff;border:1px solid #0ff;box-shadow:0 0 20px #0ff,inset 0 0 20px #0ff}
+</style>
+</head>
+<body>
+<div id="hud">QUANTUM HANDS V5<br>CYBERPUNK MODE</div>
+<div id="start"><button id="go">ACTIVATE</button></div>
+<video id="cam" autoplay muted playsinline></video>
+<canvas id="fx"></canvas>
+
+<script type="module">
+import { FilesetResolver, HandLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
+
+const canvas=fx,ctx=canvas.getContext("2d"),video=cam;
+let handLandmarker,res,t=0;
+const trails=[];
+
+function resize(){canvas.width=innerWidth;canvas.height=innerHeight}
+resize(); addEventListener('resize',resize);
+
+const E=[[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
+
+go.onclick=async()=>{
+ start.remove();
+ const s=await navigator.mediaDevices.getUserMedia({video:true});
+ video.srcObject=s;
+ await video.play();
+
+ const vision=await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm");
+ handLandmarker=await HandLandmarker.createFromOptions(vision,{
+  baseOptions:{modelAssetPath:"https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task"},
+  runningMode:"VIDEO",
+  numHands:2
+ });
+
+ requestAnimationFrame(loop);
+};
+
+function drawGlow(a,b,color){
+ ctx.strokeStyle=color; ctx.lineCap="round";
+
+ ctx.lineWidth=14; ctx.globalAlpha=.05;
+ ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();
+
+ ctx.lineWidth=6; ctx.globalAlpha=.18;
+ ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();
+
+ ctx.lineWidth=2; ctx.globalAlpha=1;
+ ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();
+}
+
+function loop(){
+ t+=0.02;
+
+ if(handLandmarker&&video.readyState>=2){
+  res=handLandmarker.detectForVideo(video,performance.now());
+ }
+
+ ctx.globalAlpha=1;
+ ctx.fillStyle="rgba(0,0,0,0.08)";
+ ctx.fillRect(0,0,canvas.width,canvas.height);
+
+ const tips=[];
+
+ if(res?.landmarks){
+  res.landmarks.forEach((hand,hi)=>{
+
+   const hue=hi?180:140;
+
+   const pts=hand.map(p=>({
+    x:(1-p.x)*canvas.width,
+    y:p.y*canvas.height
+   }));
+
+   E.forEach(([a,b])=>{
+    drawGlow(pts[a],pts[b],`hsl(${hue},100%,60%)`);
+   });
+
+   [4,8,12,16,20].forEach(i=>{
+    const p=pts[i];
+    tips.push(p);
+
+    trails.push({
+      x:p.x,
+      y:p.y,
+      life:30,
+      hue
+    });
+
+    const g=ctx.createRadialGradient(p.x,p.y,0,p.x,p.y,25);
+    g.addColorStop(0,"rgba(255,255,255,.9)");
+    g.addColorStop(.4,`hsla(${hue},100%,60%,.5)`);
+    g.addColorStop(1,"transparent");
+
+    ctx.fillStyle=g;
+    ctx.beginPath();
+    ctx.arc(p.x,p.y,25,0,7);
+    ctx.fill();
+   });
+
+   const d=Math.hypot(
+    pts[4].x-pts[8].x,
+    pts[4].y-pts[8].y
+   );
+
+   if(d<60){
+    ctx.strokeStyle="#7fffff";
+    ctx.lineWidth=2;
+    ctx.beginPath();
+    ctx.moveTo(pts[4].x,pts[4].y);
+
+    for(let i=1;i<8;i++){
+      const m=i/8;
+      ctx.lineTo(
+       pts[4].x+(pts[8].x-pts[4].x)*m+(Math.random()-.5)*16,
+       pts[4].y+(pts[8].y-pts[4].y)*m+(Math.random()-.5)*16
+      );
+    }
+
+    ctx.lineTo(pts[8].x,pts[8].y);
+    ctx.stroke();
+   }
+
+   const w=pts[0];
+   ctx.strokeStyle="rgba(0,255,255,.25)";
+   ctx.beginPath();
+   ctx.arc(w.x,w.y,35+Math.sin(t*3)*5,0,Math.PI*2);
+   ctx.stroke();
+  });
+ }
+
+ if(tips.length>=10){
+  for(let i=0;i<5;i++){
+   drawGlow(tips[i],tips[i+5],"#66ffff");
+  }
+ }
+
+ for(let i=trails.length-1;i>=0;i--){
+   const p=trails[i];
+   p.life--;
+
+   ctx.fillStyle=`hsla(${p.hue},100%,60%,${p.life/30})`;
+   ctx.beginPath();
+   ctx.arc(p.x,p.y,4*(p.life/30),0,7);
+   ctx.fill();
+
+   if(p.life<=0) trails.splice(i,1);
+ }
+
+ requestAnimationFrame(loop);
+}
+</script>
+</body>
+</html>
